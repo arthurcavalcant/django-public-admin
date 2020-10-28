@@ -10,6 +10,7 @@ settings.configure(
         "django.contrib.sessions",
         "django.contrib.messages",
         "django.contrib.sites",
+        "pytest",
     ]
 )
 

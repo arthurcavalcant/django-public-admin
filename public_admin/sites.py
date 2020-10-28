@@ -3,6 +3,7 @@ from functools import update_wrapper
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpResponseForbidden
+from django.urls import path
 from django.views.decorators.csrf import csrf_protect
 
 from public_admin.exceptions import UnauthorizedModelError
@@ -16,7 +17,11 @@ class PublicApp:
 
     def __init__(self, name, models):
         self.name = name
-        self.permissions = tuple(f"{name}.view_{model}" for model in models)
+        self.view_permissions = tuple(f"{name}.view_{model}" for model in models)
+        self.export_permissions = tuple(f"/dashboard/{name}/{model}/" for model in models)
+        print(self.export_permissions)
+
+
 
 
 class DummyUser(AnonymousUser):
@@ -29,8 +34,14 @@ class DummyUser(AnonymousUser):
         self.permissions = set(
             permission.lower()
             for public_app in public_apps
-            for permission in public_app.permissions
+            for permission in public_app.view_permissions
         )
+        set(
+            self.permissions.add(permission.lower())
+            for public_app in public_apps
+            for permission in public_app.export_permissions
+        )
+        print(self.permissions)
         super().__init__(*args, **kwargs)
 
     def has_module_perms(self, app_label):
@@ -41,6 +52,9 @@ class DummyUser(AnonymousUser):
     def has_perm(self, permission, obj=None):
         """Only grant permission if the app and model were passed in a
         `public_admin.sites.PublicApp`."""
+        print(permission)
+        print(self.permissions)
+        print(permission.lower() in self.permissions)
         return permission.lower() in self.permissions
 
 
@@ -79,8 +93,12 @@ class PublicAdminSite(AdminSite):
         return list(urls), "admin", self.name
 
     def has_permission(self, request):
-        """Blocks all non-GET requests."""
-        return request.method == "GET"
+        """Allows only GET requests and POST request for exporting."""
+        if request.method == "GET":
+            return True
+        else:
+            return self.dummy_user.has_perm(request.path_info)
+
 
     def admin_view(self, view, cacheable=False):
         """Injects the `public_admin.sites.DummyUser` in every request in this
@@ -88,6 +106,7 @@ class PublicAdminSite(AdminSite):
 
         def inner(request, *args, **kwargs):
             request.user = self.dummy_user
+            print(request.path_info)
             if not self.has_permission(request):
                 return HttpResponseForbidden()
             return view(request, *args, **kwargs)
@@ -95,13 +114,13 @@ class PublicAdminSite(AdminSite):
         if not getattr(view, "csrf_exempt", False):
             inner = csrf_protect(inner)
 
+        print(update_wrapper(inner, view))
         return update_wrapper(inner, view)
 
     def register(self, model, admin_class=None, **options):
         """Verifies whether the model about to be registered is allowed in this
         public admin site"""
         permission = f"{model._meta.app_label}.view_{model._meta.model_name}"
-        print(permission)
 
         if not self.dummy_user.has_perm(permission):
             msg = f"{model._meta.object_name} is not listed in this public app."

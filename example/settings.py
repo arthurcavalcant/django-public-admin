@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "example.my_open_house.apps.MyOpenHouseConfig",
+    "import_export",
 ]
 
 MIDDLEWARE = [
